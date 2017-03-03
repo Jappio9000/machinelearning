@@ -1,0 +1,118 @@
+---
+title: "Machine Learning course project"
+author: "J Balvers"
+date: "26 februari 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+set.seed(1996)
+```
+
+** Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online ** 
+
+
+## Introduction
+In this course project for the Machine Learning class, I will investigate data collected from activity trackers. I'll use the Weight Lifting Exercises Dataset available from  http://groupware.les.inf.puc-rio.br/har and available under the CC BY-SA license. The original publication was Velloso E. et al, "Qualitative Activity Recognistion of Weight Lifting Exercises" from the Proceeding of 4th International Conference in Cooperation with SIGCHI.
+
+The dataset contains activity sensor data from six participants performing a biceps curl in five different ways: one correct method and four incorrect ones that are common mistakes.
+
+The goal of this course project is to create a model using a training dataset that can accurately predict if the biceps curl was performed correctly on a testing dataset.
+
+
+## Loading and cleaning the dataset
+I've manually downloaded the training and testing datasets to the work diretory of R. The rest of this R markdown document code assumes that the R workspace is setup with the datasets in the current work directory.
+
+The files are available here:
+  Traning data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+  
+  Testing data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r load data, echo = FALSE}
+testing <- read.csv("pml-testing.csv", na.strings = c("NA", "","#DIV/0!"))
+training <- read.csv("pml-training.csv", na.strings = c("NA", "","#DIV/0!"))
+dim(training)
+dim(testing)
+```
+
+The training dataset contains 19622 entries (exercises performed) and the testing set contains 20. Both datasets have 160 variables. After a primary analysis of the data using the str() and summary() functions, there appeared to be quite a few NA and "!DIV/0!" values in the dataset. Therefore I've already read in the data using these na.strings arguments.
+
+ I'll remove from both datasets the columns that have only NA values. Other columns we don't need are the ones including "timestamp", "window" and "user" in the column name. From the testing set we can also remove the "problem_id" column
+
+I thought about also dropping all columns with data from the belt-sensor, because that sensor will not provide useful data when performing proper dumbbell lifts. But since the datasets include dumbbell lifts that were not performed correctly, these columns may still provide useful data so I've decided against removing these.
+
+``` {r cleanup}
+# Remove cols with timestamp/window/user in colname
+training2 <- training[,!grepl("timestamp|window|user", names(training))]
+testing2 <- testing[,!grepl("timestamp|window|user|problem", names(testing))]
+
+# Remove columns with all NA-values
+training2 <-training2[,colSums(is.na(training2)) == 0]
+testing2 <- testing2[,colSums(is.na(testing2)) == 0]
+
+data.frame(length(names(training2)),length(names(testing2)))
+``` 
+
+The result is a training set with 54 variables (including classe) and a testing set with 53 variables.
+
+
+## Check for near zero variance
+
+We'll check for variables with (near) zero variability using the nearZeroVar function from the caret package. The outcome shows that there are no (near) zero variance variables in our training set
+
+``` {r nzv}
+nzvar <- nearZeroVar(training2, saveMetrics=T)
+## number of predictors with zero variance
+sum(nzvar$zeroVar)
+## number of predictors with near zero variance
+sum(nzvar[nzvar[,"nzv"] >0,]$nzv)
+```
+
+
+## Create validation set
+
+I've created a validation test set from the training dataset to check model performance before applying the model to the testing dataset at the end of this course project.
+
+``` {r validationset}
+inTrain <- createDataPartition(y = training2$classe, p = 0.7, list = FALSE)
+
+training_sub <- training2[inTrain,]
+validation <- training2[-inTrain,]
+```
+
+
+## Creating a model
+
+Using random forests, I've created a model on the training_sub data. The calculation time for this model without setting the parameters was too long for my tastes (> 2 hrs). So I've used a couple of settings to control the modelling process.
+
+``` {r rfmodel}
+modFit <- train(classe ~ ., data=training_sub, method="rf", importance=T, trControl= trainControl(method = "cv", number = 10))
+```
+
+
+## Analyzing model accuracy
+
+Using the created model we can test it on the validation dataset and report the confusion matrix and accuracy.
+
+``` {r validation}
+pred <- predict(modFit, validation)
+conf <- confusionMatrix(pred, validation$classe)
+accuracy <- conf$overall["Accuracy"]
+conf$table
+accuracy
+```
+
+The confusion matrix shows only 2 of the 5885 validation set samples to be incorrect. 
+
+The out-of-sample error on the validation set is 1 - accuracy = approx. 0.034%
+
+``` {r errorrate}
+erate <- 1 - accuracy
+erate
+```
+
+## Prediction on the testing set
+Prediction with the model applied to the testing dataset is not shown here, in line with the course project instructions.
